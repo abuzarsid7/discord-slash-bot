@@ -11,3 +11,13 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+model command_log {
+  id            Int      @id @default(autoincrement())
+  interactionId String   @unique
+  commandName   String
+  user          String
+  payloadText   String
+  flagged       Boolean
+  createdAt     DateTime @default(now())
+}
