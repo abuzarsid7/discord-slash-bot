@@ -20,9 +20,10 @@ export async function POST(req: Request) {
     return new Response('Missing signature or timestamp', { status: 401 });
   }
 
-  // Ensure DISCORD_PUBLIC_KEY is set in your environment variables (.env.local)
-  const publicKey = process.env.DISCORD_PUBLIC_KEY;
+  // Ensure DISCORD_PUBLIC_KEY is set in your environment variables and stripped of any whitespace
+  const publicKey = process.env.DISCORD_PUBLIC_KEY?.trim();
   if (!publicKey) {
+    console.error('Server configuration error: missing public key');
     return new Response('Server configuration error: missing public key', { status: 500 });
   }
 
@@ -30,6 +31,7 @@ export async function POST(req: Request) {
   const isValidRequest = await verifyKey(rawBody, signature, timestamp, publicKey);
 
   if (!isValidRequest) {
+    console.error('Invalid request signature. Public Key:', publicKey, 'Signature:', signature);
     return new Response('Invalid request signature', { status: 401 });
   }
 
@@ -37,10 +39,7 @@ export async function POST(req: Request) {
   const message = JSON.parse(rawBody);
 
   if (message.type === InteractionType.PING) {
-    return new Response(JSON.stringify({ type: InteractionResponseType.PONG }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return NextResponse.json({ type: InteractionResponseType.PONG }, { status: 200 });
   }
 
   if (message.type === InteractionType.APPLICATION_COMMAND) {
