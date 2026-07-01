@@ -1,14 +1,8 @@
 import { verifyKey, InteractionType, InteractionResponseType } from 'discord-interactions';
 import { NextResponse } from 'next/server';
-import { Pool } from 'pg';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
 
 export async function POST(req: Request) {
   // Get headers for verification
@@ -55,21 +49,8 @@ export async function POST(req: Request) {
     let flagged = false;
     let reportText = "";
 
-    // Handle /report command
     if (name === 'report') {
       reportText = options?.find((opt: any) => opt.name === 'text')?.value || "";
-      
-      // Apply a trivial rule: flag if text contains "urgent"
-      if (reportText.toLowerCase().includes("urgent")) {
-        flagged = true;
-        replyMessage = "🚨 Urgent report logged. Admins have been notified.";
-      } else {
-        replyMessage = "Report logged successfully.";
-      }
-    } 
-    // Handle /status command
-    else if (name === 'status') {
-      replyMessage = "Bot is online and tracking interactions! 🟢";
     }
 
     // 1. Return Type 5 Deferred Acknowledgment IMMEDIATELY (< 20ms) to beat Discord's 3-second clock!
@@ -81,6 +62,29 @@ export async function POST(req: Request) {
     // 2. Run database logging, Slack mirroring, and Discord message follow-up asynchronously in the background
     (async () => {
       try {
+        // Fetch dynamic flagged keywords and mirror webhook URL from DB Config table
+        const [configRecord, mirrorRecord] = await Promise.all([
+          prisma.config.findUnique({ where: { key: 'flagged_keywords' } }),
+          prisma.config.findUnique({ where: { key: 'mirror_webhook_url' } })
+        ]);
+        const keywordsStr = configRecord?.value || "urgent";
+        const keywords = keywordsStr.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
+        const dbMirrorUrl = mirrorRecord?.value?.trim();
+        const envDiscordUrl = (process.env.DISCORD_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL)?.trim();
+        const urlsToNotify = Array.from(new Set([dbMirrorUrl, envDiscordUrl].filter(Boolean) as string[]));
+
+        if (name === 'report') {
+          const isFlagged = keywords.some((kw: string) => reportText.toLowerCase().includes(kw));
+          if (isFlagged) {
+            flagged = true;
+            replyMessage = `🚨 Flagged report logged. Admins have been notified.`;
+          } else {
+            replyMessage = "Report logged successfully.";
+          }
+        } else if (name === 'status') {
+          replyMessage = "Bot is online and tracking interactions! 🟢";
+        }
+
         // Write to Postgres first (Memory Preservation & Deduplication check via @unique constraint)
         await prisma.command_log.create({
           data: {
@@ -92,26 +96,32 @@ export async function POST(req: Request) {
           }
         });
 
-        // Notify Slack mirror channel if configured
-        if (process.env.SLACK_WEBHOOK_URL) {
-          fetch(process.env.SLACK_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: `*New Command Used:* \`/${name}\` by ${username}\n*Flagged:* ${flagged}\n*Content:* ${reportText || "N/A"}`
+        // Notify all configured Mirror Channels (Discord Webhooks)
+        if (urlsToNotify.length > 0) {
+          const notifyText = `**New Command Used:** \`/${name}\` by ${username}\n**Flagged:** ${flagged}\n**Content:** ${reportText || "N/A"}`;
+          const payload = JSON.stringify({
+            content: notifyText, // For Discord channel webhooks
+            text: notifyText     // Fallback for Slack webhooks
+          });
+
+          urlsToNotify.forEach((url) => {
+            fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: payload
             })
-          })
-            .then(async (res) => {
-              if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-            })
-            .catch((error) => {
-              console.error("Slack mirror failed:", error);
-              // Log downstream failure directly to the database row
-              prisma.command_log.update({
-                where: { interactionId: interactionId },
-                data: { errorLog: `Slack mirror failed: ${error.message || error}` }
-              }).catch((e) => console.error("Failed to update DB error log:", e));
-            });
+              .then(async (res) => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+              })
+              .catch((error) => {
+                console.error(`Mirror webhook failed (${url}):`, error);
+                // Log downstream failure directly to the database row
+                prisma.command_log.update({
+                  where: { interactionId: interactionId },
+                  data: { errorLog: `Mirror failed (${url.slice(0, 25)}...): ${error.message || error}` }
+                }).catch((e) => console.error("Failed to update DB error log:", e));
+              });
+          });
         }
       } catch (error: any) {
         // If duplicate webhook arrived, Postgres throws P2002 unique constraint error.

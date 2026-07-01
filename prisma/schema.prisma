@@ -21,3 +21,11 @@ model command_log {
   errorLog      String?
   createdAt     DateTime @default(now())
 }
+
+model config {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
