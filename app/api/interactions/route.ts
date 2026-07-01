@@ -48,10 +48,9 @@ export async function POST(req: Request) {
   if (message.type === InteractionType.APPLICATION_COMMAND) {
     const { name, options } = message.data;
     const interactionId = message.id;
+    const token = message.token;
     const username = message.member?.user?.username || 'Unknown User';
     
-    // Note: deduplication happens automatically in the background via Postgres @unique constraint on interactionId
-
     let replyMessage = "Command received!";
     let flagged = false;
     let reportText = "";
@@ -73,39 +72,70 @@ export async function POST(req: Request) {
       replyMessage = "Bot is online and tracking interactions! 🟢";
     }
 
-    // 1. Write to Postgres in the background (no 'await')
-    prisma.command_log.create({
-      data: {
-        interactionId: interactionId,
-        commandName: name,
-        user: username,
-        payloadText: reportText,
-        flagged: flagged
-      }
-    }).catch((err) => {
-      console.error("Database logging failed or duplicate interaction:", err.message || err);
+    // 1. Return Type 5 Deferred Acknowledgment IMMEDIATELY (< 20ms) to beat Discord's 3-second clock!
+    // This displays "Bot is thinking..." in Discord and grants a 15-minute SLA for slow downstream tasks.
+    const deferredResponse = NextResponse.json({
+      type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE // Type 5
     });
 
-    // 2. Notify Slack in the background (no 'await')
-    if (process.env.SLACK_WEBHOOK_URL) {
-      fetch(process.env.SLACK_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: `*New Command Used:* \`/${name}\` by ${username}\n*Flagged:* ${flagged}\n*Content:* ${reportText || "N/A"}`
-        })
-      }).catch((error) => {
-        console.error("Slack mirror failed:", error);
-      });
-    }
+    // 2. Run database logging, Slack mirroring, and Discord message follow-up asynchronously in the background
+    (async () => {
+      try {
+        // Write to Postgres first (Memory Preservation & Deduplication check via @unique constraint)
+        await prisma.command_log.create({
+          data: {
+            interactionId: interactionId,
+            commandName: name,
+            user: username,
+            payloadText: reportText,
+            flagged: flagged
+          }
+        });
 
-    // Respond back in Discord
-    return NextResponse.json({
-      type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, // Type 4
-      data: {
-        content: replyMessage
+        // Notify Slack mirror channel if configured
+        if (process.env.SLACK_WEBHOOK_URL) {
+          fetch(process.env.SLACK_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: `*New Command Used:* \`/${name}\` by ${username}\n*Flagged:* ${flagged}\n*Content:* ${reportText || "N/A"}`
+            })
+          })
+            .then(async (res) => {
+              if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+            })
+            .catch((error) => {
+              console.error("Slack mirror failed:", error);
+              // Log downstream failure directly to the database row
+              prisma.command_log.update({
+                where: { interactionId: interactionId },
+                data: { errorLog: `Slack mirror failed: ${error.message || error}` }
+              }).catch((e) => console.error("Failed to update DB error log:", e));
+            });
+        }
+      } catch (error: any) {
+        // If duplicate webhook arrived, Postgres throws P2002 unique constraint error.
+        if (error?.code === 'P2002') {
+          console.log(`Duplicate interaction ID ${interactionId} detected in background. No-op.`);
+          replyMessage = "⚠️ Duplicate command ignored (No-op).";
+        } else {
+          console.error("Database error during command logging:", error);
+          replyMessage = "❌ An error occurred while logging your command.";
+        }
+      } finally {
+        // 3. Use Discord's Edit Original Interaction endpoint (@original) to replace "Bot is thinking..." with the actual reply!
+        if (process.env.DISCORD_APP_ID && token) {
+          const editUrl = `https://discord.com/api/v10/webhooks/${process.env.DISCORD_APP_ID}/${token}/messages/@original`;
+          fetch(editUrl, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: replyMessage })
+          }).catch((e) => console.error("Failed to edit original interaction message:", e));
+        }
       }
-    });
+    })();
+
+    return deferredResponse;
   }
 
   return new Response('Unknown interaction type', { status: 400 });

@@ -18,5 +18,6 @@ model command_log {
   user          String
   payloadText   String
   flagged       Boolean
+  errorLog      String?
   createdAt     DateTime @default(now())
 }
