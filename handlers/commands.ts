@@ -1,5 +1,5 @@
 import { InteractionResponseType, MessageComponentTypes, ButtonStyleTypes, TextStyleTypes } from 'discord-interactions';
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { notifyMirrorWebhooks, editOriginalInteraction } from '@/services/webhooks';
 import { triageWithAI } from '@/services/ai';
@@ -68,20 +68,26 @@ export async function handleApplicationCommand(message: any) {
     type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE // Type 5
   });
 
-  // 2. Run database logging, AI Triage, Slack mirroring, and Discord message follow-up asynchronously in background
-  (async () => {
+  // 2. Run database logging, AI Triage, Slack mirroring, and Discord message follow-up safely using Next.js after()!
+  after(async () => {
     try {
-      const configRecord = await prisma.config.findUnique({
-        where: { guildId_key: { guildId, key: 'flagged_keywords' } }
-      });
-      const keywordsStr = configRecord?.value || "urgent";
-      const keywords = keywordsStr.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
-
       let aiTriage: string | null = null;
 
       if (name === 'report') {
         // Run AI triage on the report text using free Gemini/Groq API (or simulation fallback)
         aiTriage = await triageWithAI(reportText);
+
+        let keywords = ["urgent"];
+        try {
+          const configRecord = await prisma.config.findUnique({
+            where: { guildId_key: { guildId, key: 'flagged_keywords' } }
+          });
+          if (configRecord?.value) {
+            keywords = configRecord.value.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
+          }
+        } catch (dbErr) {
+          console.error("Error fetching flagged keywords, using default:", dbErr);
+        }
 
         const isFlagged = keywords.some((kw: string) => reportText.toLowerCase().includes(kw));
         if (isFlagged) {
@@ -169,7 +175,7 @@ export async function handleApplicationCommand(message: any) {
       console.error("Error processing command interaction:", error);
       await editOriginalInteraction(token, "❌ An error occurred while processing your command.");
     }
-  })();
+  });
 
   return deferredResponse;
 }

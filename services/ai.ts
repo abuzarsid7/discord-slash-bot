@@ -109,5 +109,9 @@ export async function triageWithAI(text: string): Promise<string> {
     priority = "Medium";
   }
   
-  return `Category: ${category} | Priority: ${priority} | Summary: User reported: ${text.slice(0, 50)}${text.length > 50 ? '...' : ''} (Simulated triage - add GEMINI_API_KEY to .env for live AI)`;
+  const reason = promises.length > 0 
+    ? "(Simulated triage - live API timed out or rate-limited)" 
+    : "(Simulated triage - restart 'npm run dev' to load new .env API keys!)";
+  
+  return `Category: ${category} | Priority: ${priority} | Summary: User reported: ${text.slice(0, 50)}${text.length > 50 ? '...' : ''} ${reason}`;
 }

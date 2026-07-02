@@ -1,5 +1,5 @@
 import { InteractionResponseType, MessageComponentTypes, ButtonStyleTypes } from 'discord-interactions';
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { notifyMirrorWebhooks, editOriginalInteraction } from '@/services/webhooks';
 import { triageWithAI } from '@/services/ai';
@@ -31,7 +31,7 @@ export async function handleModalSubmit(message: any) {
   });
 
   // 2. Asynchronously run AI Triage, save to Postgres, notify mirror webhooks, and edit the Discord response
-  (async () => {
+  after(async () => {
     let replyContent = `📋 **Modal Report Submitted by ${username}!**\n\n**Title:** ${title}\n**Details:** ${details}`;
     const replyComponents = [
       {
@@ -94,7 +94,7 @@ export async function handleModalSubmit(message: any) {
       console.error("Error processing modal submission:", error);
       await editOriginalInteraction(token, "❌ An error occurred while processing your modal report.");
     }
-  })();
+  });
 
   return deferredResponse;
 }

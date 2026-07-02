@@ -1,5 +1,5 @@
 import { InteractionResponseType, MessageComponentTypes, ButtonStyleTypes, TextStyleTypes } from 'discord-interactions';
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
 export async function handleMessageComponent(message: any) {
@@ -9,13 +9,13 @@ export async function handleMessageComponent(message: any) {
   const guildId = message.guild_id || 'default';
 
   // Log the button click asynchronously without blocking the immediate Discord reply
-  (async () => {
+  after(async () => {
     try {
       await prisma.command_log.create({
         data: {
           interactionId: interactionId,
           guildId: guildId,
-          commandName: `button:${custom_id.split('_')[0]}`,
+          commandName: `btn:${custom_id}`,
           user: username,
           payloadText: `Clicked component: ${custom_id}`,
           flagged: false
@@ -26,7 +26,7 @@ export async function handleMessageComponent(message: any) {
         console.error("Database error logging button click:", error);
       }
     }
-  })();
+  });
 
   if (custom_id === 'refresh_status') {
     return NextResponse.json({
