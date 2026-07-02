@@ -8,7 +8,8 @@ export async function handleApplicationCommand(message: any) {
   const { name, options } = message.data;
   const interactionId = message.id;
   const token = message.token;
-  const username = message.member?.user?.username || 'Unknown User';
+  const username = message.member?.user?.username || message.user?.username || 'Unknown User';
+  const guildId = message.guild_id || 'default';
   
   let replyMessage = "Command received!";
   let replyComponents: any[] | undefined = undefined;
@@ -70,7 +71,9 @@ export async function handleApplicationCommand(message: any) {
   // 2. Run database logging, AI Triage, Slack mirroring, and Discord message follow-up asynchronously in background
   (async () => {
     try {
-      const configRecord = await prisma.config.findUnique({ where: { key: 'flagged_keywords' } });
+      const configRecord = await prisma.config.findUnique({
+        where: { guildId_key: { guildId, key: 'flagged_keywords' } }
+      });
       const keywordsStr = configRecord?.value || "urgent";
       const keywords = keywordsStr.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
 
@@ -138,6 +141,7 @@ export async function handleApplicationCommand(message: any) {
       await prisma.command_log.create({
         data: {
           interactionId: interactionId,
+          guildId: guildId,
           commandName: name,
           user: username,
           payloadText: reportText,
@@ -147,7 +151,7 @@ export async function handleApplicationCommand(message: any) {
       });
 
       const notifyText = `**New Command Used:** \`/${name}\` by ${username}\n**Flagged:** ${flagged}\n**AI Triage:** ${aiTriage || "N/A"}\n**Content:** ${reportText || "N/A"}`;
-      await notifyMirrorWebhooks(notifyText, interactionId);
+      await notifyMirrorWebhooks(guildId, notifyText, interactionId);
 
     } catch (error: any) {
       if (error?.code === 'P2002') {

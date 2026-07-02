@@ -1,8 +1,10 @@
 import { prisma } from '@/lib/prisma';
 
-export async function notifyMirrorWebhooks(notifyText: string, interactionId?: string): Promise<void> {
+export async function notifyMirrorWebhooks(guildId: string, notifyText: string, interactionId?: string): Promise<void> {
   try {
-    const mirrorRecord = await prisma.config.findUnique({ where: { key: 'mirror_webhook_url' } });
+    const mirrorRecord = await prisma.config.findUnique({
+      where: { guildId_key: { guildId, key: 'mirror_webhook_url' } }
+    });
     const dbMirrorUrl = mirrorRecord?.value?.trim();
     const envDiscordUrl = (process.env.DISCORD_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL)?.trim();
     const urlsToNotify = Array.from(new Set([dbMirrorUrl, envDiscordUrl].filter(Boolean) as string[]));
@@ -26,8 +28,8 @@ export async function notifyMirrorWebhooks(notifyText: string, interactionId?: s
         .catch((error) => {
           console.error(`Mirror webhook failed (${url}):`, error);
           if (interactionId) {
-            prisma.command_log.update({
-              where: { interactionId },
+            prisma.command_log.updateMany({
+              where: { interactionId, guildId },
               data: { errorLog: `Mirror failed (${url.slice(0, 25)}...): ${error.message || error}` }
             }).catch((e) => console.error("Failed to update DB error log:", e));
           }

@@ -14,6 +14,7 @@ datasource db {
 model command_log {
   id            Int      @id @default(autoincrement())
   interactionId String   @unique
+  guildId       String   @default("default")
   commandName   String
   user          String
   payloadText   String
@@ -25,8 +26,11 @@ model command_log {
 
 model config {
   id        Int      @id @default(autoincrement())
-  key       String   @unique
+  guildId   String   @default("default")
+  key       String
   value     String
   updatedAt DateTime @updatedAt
+
+  @@unique([guildId, key], name: "guildId_key")
 }
 

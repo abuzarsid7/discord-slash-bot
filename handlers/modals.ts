@@ -9,6 +9,7 @@ export async function handleModalSubmit(message: any) {
   const interactionId = message.id;
   const token = message.token;
   const username = message.member?.user?.username || message.user?.username || 'Unknown User';
+  const guildId = message.guild_id || 'default';
 
   // Parse form fields from Action Rows
   const fields: Record<string, string> = {};
@@ -57,7 +58,9 @@ export async function handleModalSubmit(message: any) {
       const aiTriage = await triageWithAI(`${title}: ${details}`);
       replyContent += `\n\n🤖 **AI Triage:**\n> ${aiTriage}`;
 
-      const configRecord = await prisma.config.findUnique({ where: { key: 'flagged_keywords' } });
+      const configRecord = await prisma.config.findUnique({
+        where: { guildId_key: { guildId, key: 'flagged_keywords' } }
+      });
       const keywordsStr = configRecord?.value || "urgent";
       const keywords = keywordsStr.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
       const isFlagged = keywords.some((kw: string) => fullText.toLowerCase().includes(kw));
@@ -65,6 +68,7 @@ export async function handleModalSubmit(message: any) {
       await prisma.command_log.create({
         data: {
           interactionId: interactionId,
+          guildId: guildId,
           commandName: `modal:${custom_id}`,
           user: username,
           payloadText: fullText,
@@ -74,7 +78,7 @@ export async function handleModalSubmit(message: any) {
       });
 
       const notifyText = `**New Modal Submitted:** \`${custom_id}\` by ${username}\n**Flagged:** ${isFlagged}\n**AI Triage:** ${aiTriage}\n${fullText}`;
-      await notifyMirrorWebhooks(notifyText);
+      await notifyMirrorWebhooks(guildId, notifyText, interactionId);
     } catch (error: any) {
       if (error?.code !== 'P2002') {
         console.error("Database error logging modal submission:", error);

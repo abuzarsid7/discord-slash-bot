@@ -6,6 +6,7 @@ export async function handleMessageComponent(message: any) {
   const { custom_id } = message.data;
   const interactionId = message.id;
   const username = message.member?.user?.username || message.user?.username || 'Unknown User';
+  const guildId = message.guild_id || 'default';
 
   // Log the button click asynchronously without blocking the immediate Discord reply
   (async () => {
@@ -13,6 +14,7 @@ export async function handleMessageComponent(message: any) {
       await prisma.command_log.create({
         data: {
           interactionId: interactionId,
+          guildId: guildId,
           commandName: `button:${custom_id.split('_')[0]}`,
           user: username,
           payloadText: `Clicked component: ${custom_id}`,

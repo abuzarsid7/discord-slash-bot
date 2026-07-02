@@ -4,9 +4,11 @@ import React, { useState, useTransition } from "react";
 import { updateConfig } from "../actions/config";
 
 export function ConfigForm({
+  guildId = "default",
   initialKeywords,
   initialMirrorUrl,
 }: {
+  guildId?: string;
   initialKeywords: string;
   initialMirrorUrl?: string;
 }) {
@@ -19,6 +21,7 @@ export function ConfigForm({
     e.preventDefault();
     setSaved(false);
     const formData = new FormData();
+    formData.append("guildId", guildId);
     formData.append("keywords", keywords);
     formData.append("mirrorUrl", mirrorUrl);
 
@@ -39,10 +42,10 @@ export function ConfigForm({
             <svg className="w-5 h-5 text-[#5865F2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
             </svg>
-            System & Notification Rules Configuration
+            System & Notification Rules ({guildId === "default" ? "Default Scope" : `Guild: ${guildId}`})
           </h2>
           <p className="text-sm text-gray-400 mt-1">
-            Configure dynamic trigger rules and real-time webhook notification mirrors for incoming slash commands.
+            Configure dynamic trigger rules and real-time webhook notification mirrors isolated for this server.
           </p>
         </div>
         {saved && (

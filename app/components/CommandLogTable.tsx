@@ -4,6 +4,7 @@ import { EmptyState } from "./EmptyState";
 export interface LogEntry {
   id: number;
   interactionId: string;
+  guildId: string;
   commandName: string;
   user: string;
   payloadText: string;
@@ -50,6 +51,7 @@ export function CommandLogTable({ logs }: { logs: LogEntry[] }) {
             <tr>
               <th className="py-3.5 px-6">Command</th>
               <th className="py-3.5 px-6">User</th>
+              <th className="py-3.5 px-6">Server Scope</th>
               <th className="py-3.5 px-6">Content / Payload</th>
               <th className="py-3.5 px-6">AI Triage</th>
               <th className="py-3.5 px-6">Rule Flag</th>
@@ -71,6 +73,11 @@ export function CommandLogTable({ logs }: { logs: LogEntry[] }) {
                       {log.user ? log.user.charAt(0).toUpperCase() : "?"}
                     </div>
                     {log.user || "Unknown"}
+                  </td>
+                  <td className="py-4 px-6 font-mono text-xs text-gray-300">
+                    <span className="bg-[#1e1f22] px-2 py-1 rounded border border-[#111214]">
+                      {log.guildId === 'default' ? 'Global/Default' : log.guildId}
+                    </span>
                   </td>
                   <td className="py-4 px-6 max-w-xs truncate text-gray-300 font-mono text-xs">
                     {log.payloadText ? (
