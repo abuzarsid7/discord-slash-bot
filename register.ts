@@ -7,15 +7,19 @@ const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const commands = [
   {
     name: 'report',
-    description: 'Report an issue to the admins',
+    description: 'Report an issue (leave blank to open interactive dialog form)',
     options: [
       {
         name: 'text',
-        description: 'The content of your report',
+        description: 'Optional summary (leave blank to use multi-step modal dialog)',
         type: 3, // Type 3 is STRING
-        required: true,
+        required: false,
       },
     ],
+  },
+  {
+    name: 'feedback',
+    description: 'Submit multi-step feedback or bug report via an interactive popup form',
   },
   {
     name: 'status',

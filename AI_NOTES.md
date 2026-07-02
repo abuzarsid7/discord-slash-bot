@@ -4,7 +4,7 @@
 * **Tools & Models Used:** Developed using **Google Antigravity IDE** powered by **Gemini 3.1 Pro (High)** as an interactive pair-programming and debugging assistant.
 * **Work Split:**
   * **My Role (Architecture, Integration & QA):** I defined the core system architecture, selected the technology stack (Next.js 16, Prisma 7, Neon Serverless Postgres), configured external integrations (Discord Developer Portal, Slack Incoming Webhooks, ngrok tunneling), designed the end-to-end data flow, and led live-environment testing and debugging.
-  * **AI's Role (Code Generation & Acceleration):** The AI assisted by generating initial boilerplate (Ed25519 request signature verification using `discord-interactions`, Prisma schema syntax, UI components for the admin dashboard), writing the standalone TypeScript script (`register.ts`) for registering guild slash commands, and executing code refactors during optimization.
+  * **AI's Role (Code Generation & Acceleration):** The AI assisted by generating initial boilerplate (Ed25519 request signature verification using `discord-interactions`, Prisma schema syntax, UI components for the admin dashboard), writing the standalone TypeScript script (`register.ts`) for registering guild slash commands, implementing interactive Discord UI components (buttons, ActionRows, multi-step modal dialogs), and executing code refactors during optimization.
 
 ---
 
@@ -15,8 +15,12 @@ To ensure a robust, maintainable, and cloud-native application without over-engi
    Instead of splitting the project into a separate frontend SPA and backend Node/Express API, I chose a unified Next.js App Router application. The admin dashboard UI (`/app/components/*`) and the Discord webhook receiver (`/app/api/interactions/route.ts`) live within a single codebase and deployment unit. This eliminated CORS complexities, simplified environment variable management, and made deployment to serverless platforms seamless.
 2. **Connection-Pooled ORM (`@prisma/adapter-pg` with native `pg`):** 
    In serverless environments, standard ORM connections can easily exhaust database connection limits during bursty webhook traffic. I decided to use Prisma 7 paired with the native `@prisma/adapter-pg` driver. This guarantees efficient PostgreSQL connection pool utilization while maintaining end-to-end TypeScript type safety for command logging and deduplication.
-3. **Asynchronous Non-Blocking Webhook Processing:** 
-   Rather than coupling the HTTP response to downstream I/O, I architected the interactions endpoint to decouple acknowledgement from execution. The handler validates the signature and returns the JSON reply to Discord immediately, while database writes and Slack notifications fire asynchronously. This design isolates Discord's strict response SLA from third-party network variability.
+3. **Asynchronous Non-Blocking Webhook Processing & Deferred Responses:** 
+   Rather than coupling the HTTP response to downstream I/O, I architected the interactions endpoint to decouple acknowledgement from execution. For slash commands, the handler returns Type 5 (`DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE`) in under 20ms, displaying *"Bot is thinking..."* and granting a 15-minute SLA. Meanwhile, database writes and Slack/Discord webhook mirroring fire asynchronously in the background before updating the original message via REST (`PATCH /messages/@original`).
+4. **Interactive UI State Management & Disabled Button Patterns:** 
+   When administrators process reports via button clicks (`ack_report`, `dismiss_report`), instead of attempting to pass empty component arrays (`components: []`) which violate Discord's v10 interaction response schema, we transform active buttons into disabled visual indicators (`[ Acknowledged by username ✅ ]`). This provides clear visual consensus across admin channels while adhering to Discord's strict validation rules.
+5. **Modular Layered Dispatcher Architecture:** 
+   As interaction types expanded to encompass Slash Commands (Type 2), Message Components (Type 3), and Modal Submissions (Type 5), the monolithic route grew to ~500 lines. We refactored the codebase into clean separation of concerns: `utils/verify.ts` handles Ed25519 cryptographic authentication, `services/webhooks.ts` manages outbound REST APIs, and dedicated domain handlers (`handlers/commands.ts`, `handlers/components.ts`, `handlers/modals.ts`) encapsulate business logic, leaving `app/api/interactions/route.ts` as a concise 38-line traffic controller.
 
 ---
 
@@ -27,4 +31,11 @@ To ensure a robust, maintainable, and cloud-native application without over-engi
 * **How I Fixed It:** I refactored the route handler to eliminate all blocking downstream I/O before the return statement:
   1. I removed the explicit pre-query `await findUnique` check, instead relying directly on PostgreSQL's native `@unique` index constraint on `interactionId` to silently catch duplicate payloads in an asynchronous `.catch()` block.
   2. I stripped the `await` keyword from both `prisma.command_log.create(...)` and `fetch(SLACK_WEBHOOK_URL, ...)`. 
-  This allowed the endpoint to return the Type 4 (`CHANNEL_MESSAGE_WITH_SOURCE`) acknowledgement back to Discord in under **~20ms** every time, while database logging and Slack mirroring reliably complete in the background without ever risking a webhook timeout.
+  3. I transitioned to Discord's deferred message workflow (`DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE`), allowing the endpoint to acknowledge receipt in under **~20ms** every time. Database logging and Slack mirroring reliably complete in an IIFE background task before editing the `@original` interaction message.
+
+---
+
+## 4. Advanced Interactive Features: Modals & Action Rows
+To eliminate single-string command limitations and enable rich data collection, we integrated interactive components:
+* **Multi-Step Dialog Forms (Modals):** We added a dedicated `/feedback` command and updated `/report` with optional arguments. When invoked without text, the endpoint returns `InteractionResponseType.MODAL` (Type 9) immediately, launching a popup dialog with short text (`Title`) and paragraph (`Detailed Description`) input rows.
+* **Modal Submission Processing:** When users submit dialog forms, Discord fires an interaction of Type 5 (`MODAL_SUBMIT`). Our `handleModalSubmit` handler extracts form values from nested `ActionRow` structures, records them asynchronously to PostgreSQL, scans for flagged keywords, mirrors alerts to Slack/Discord channels, and replies with a formatted confirmation message featuring interactive admin review buttons.
