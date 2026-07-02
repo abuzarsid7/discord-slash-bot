@@ -9,6 +9,7 @@ export interface LogEntry {
   payloadText: string;
   flagged: boolean;
   errorLog: string | null;
+  aiTriage: string | null;
   createdAt: Date;
 }
 
@@ -50,6 +51,7 @@ export function CommandLogTable({ logs }: { logs: LogEntry[] }) {
               <th className="py-3.5 px-6">Command</th>
               <th className="py-3.5 px-6">User</th>
               <th className="py-3.5 px-6">Content / Payload</th>
+              <th className="py-3.5 px-6">AI Triage</th>
               <th className="py-3.5 px-6">Rule Flag</th>
               <th className="py-3.5 px-6">Downstream Mirror</th>
               <th className="py-3.5 px-6">Timestamp</th>
@@ -77,6 +79,15 @@ export function CommandLogTable({ logs }: { logs: LogEntry[] }) {
                       </span>
                     ) : (
                       <span className="text-gray-500 italic">None</span>
+                    )}
+                  </td>
+                  <td className="py-4 px-6 max-w-xs truncate text-xs">
+                    {log.aiTriage ? (
+                      <span className="bg-[#5865F2]/10 text-[#5865F2] border border-[#5865F2]/20 px-2.5 py-1 rounded inline-block max-w-full truncate font-medium" title={log.aiTriage}>
+                        🤖 {log.aiTriage}
+                      </span>
+                    ) : (
+                      <span className="text-gray-500 italic">N/A</span>
                     )}
                   </td>
                   <td className="py-4 px-6">

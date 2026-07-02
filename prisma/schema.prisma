@@ -19,6 +19,7 @@ model command_log {
   payloadText   String
   flagged       Boolean
   errorLog      String?
+  aiTriage      String?
   createdAt     DateTime @default(now())
 }
 
