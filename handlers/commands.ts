@@ -138,6 +138,10 @@ export async function handleApplicationCommand(message: any) {
         ];
       }
 
+      // 1. Instantly update Discord UI so user never waits on DB inserts or webhook mirrors!
+      await editOriginalInteraction(token, replyMessage, replyComponents);
+
+      // 2. Log to database in background
       await prisma.command_log.create({
         data: {
           interactionId: interactionId,
@@ -150,19 +154,17 @@ export async function handleApplicationCommand(message: any) {
         }
       });
 
+      // 3. Mirror notifications in background
       const notifyText = `**New Command Used:** \`/${name}\` by ${username}\n**Flagged:** ${flagged}\n**AI Triage:** ${aiTriage || "N/A"}\n**Content:** ${reportText || "N/A"}`;
       await notifyMirrorWebhooks(guildId, notifyText, interactionId);
 
     } catch (error: any) {
       if (error?.code === 'P2002') {
         console.log(`Duplicate interaction ID ${interactionId} detected in background. No-op.`);
-        replyMessage = "⚠️ Duplicate command ignored (No-op).";
       } else {
         console.error("Database error during command logging:", error);
-        replyMessage = "❌ An error occurred while logging your command.";
+        await editOriginalInteraction(token, "❌ An error occurred while processing your command.");
       }
-    } finally {
-      await editOriginalInteraction(token, replyMessage, replyComponents);
     }
   })();
 

@@ -58,6 +58,9 @@ export async function handleModalSubmit(message: any) {
       const aiTriage = await triageWithAI(`${title}: ${details}`);
       replyContent += `\n\n🤖 **AI Triage:**\n> ${aiTriage}`;
 
+      // 1. Instantly update Discord UI so user never waits on DB inserts or webhook mirrors!
+      await editOriginalInteraction(token, replyContent, replyComponents);
+
       const configRecord = await prisma.config.findUnique({
         where: { guildId_key: { guildId, key: 'flagged_keywords' } }
       });
@@ -65,6 +68,7 @@ export async function handleModalSubmit(message: any) {
       const keywords = keywordsStr.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
       const isFlagged = keywords.some((kw: string) => fullText.toLowerCase().includes(kw));
 
+      // 2. Log to database in background
       await prisma.command_log.create({
         data: {
           interactionId: interactionId,
@@ -77,15 +81,13 @@ export async function handleModalSubmit(message: any) {
         }
       });
 
+      // 3. Mirror notifications in background
       const notifyText = `**New Modal Submitted:** \`${custom_id}\` by ${username}\n**Flagged:** ${isFlagged}\n**AI Triage:** ${aiTriage}\n${fullText}`;
       await notifyMirrorWebhooks(guildId, notifyText, interactionId);
     } catch (error: any) {
       if (error?.code !== 'P2002') {
         console.error("Database error logging modal submission:", error);
       }
-      replyContent += `\n\n⚠️ *(Note: Background processing encountered an error)*`;
-    } finally {
-      await editOriginalInteraction(token, replyContent, replyComponents);
     }
   })();
 

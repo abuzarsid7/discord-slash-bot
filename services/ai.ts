@@ -20,58 +20,77 @@ export async function triageWithAI(text: string): Promise<string> {
 
   const prompt = `You are an AI triage assistant for a Discord community moderator team. Analyze the following report or feedback text. Provide a single line of text formatted exactly like: 'Category: <Bug/Spam/Feature/Other> | Priority: <High/Medium/Low> | Summary: <concise 1-sentence summary>'. Do not include any line breaks, bullet points, or markdown code blocks. Text to triage:\n\n"${text}"`;
 
-  // 1. Try Google Gemini API (Free Tier via AI Studio using reliable gemini-1.5-flash)
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
+  const groqKey = process.env.GROQ_API_KEY?.trim();
+
+  const promises: Promise<string>[] = [];
+
+  // 1. Prepare Google Gemini API request
   if (geminiKey && geminiKey !== "your_free_google_gemini_api_key") {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 150 }
-        })
-      });
-      if (response.ok) {
+    promises.push(
+      (async () => {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(10000),
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 150 }
+          })
+        });
+        if (!response.ok) {
+          const errText = await response.text();
+          console.error(`Gemini API HTTP ${response.status}: ${errText}`);
+          throw new Error(`Gemini failed (${response.status})`);
+        }
         const data = await response.json();
         const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        if (aiText) return cleanAITriageOutput(aiText);
-      } else {
-        console.error("Gemini API error:", await response.text());
-      }
-    } catch (e) {
-      console.error("Error calling Gemini API:", e);
-    }
+        if (!aiText) throw new Error("Gemini returned empty text");
+        return cleanAITriageOutput(aiText);
+      })()
+    );
   }
 
-  // 2. Try Groq API (Free Tier)
-  const groqKey = process.env.GROQ_API_KEY?.trim();
+  // 2. Prepare Groq API request
   if (groqKey && groqKey !== "your_free_groq_api_key") {
-    try {
-      const url = "https://api.groq.com/openai/v1/chat/completions";
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${groqKey}`
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.1,
-          max_tokens: 150
-        })
-      });
-      if (response.ok) {
+    promises.push(
+      (async () => {
+        const url = "https://api.groq.com/openai/v1/chat/completions";
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${groqKey}`
+          },
+          signal: AbortSignal.timeout(10000),
+          body: JSON.stringify({
+            model: "llama-3.3-70b-versatile",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.1,
+            max_tokens: 150
+          })
+        });
+        if (!response.ok) {
+          const errText = await response.text();
+          console.error(`Groq API HTTP ${response.status}: ${errText}`);
+          throw new Error(`Groq failed (${response.status})`);
+        }
         const data = await response.json();
         const aiText = data.choices?.[0]?.message?.content?.trim();
-        if (aiText) return cleanAITriageOutput(aiText);
-      } else {
-        console.error("Groq API error:", await response.text());
-      }
-    } catch (e) {
-      console.error("Error calling Groq API:", e);
+        if (!aiText) throw new Error("Groq returned empty text");
+        return cleanAITriageOutput(aiText);
+      })()
+    );
+  }
+
+  // 3. Execute both APIs in parallel! Whichever replies faster and successfully wins!
+  if (promises.length > 0) {
+    try {
+      const fastestResult = await Promise.any(promises);
+      return fastestResult;
+    } catch (aggregateError) {
+      console.error("All configured LLM APIs failed or timed out. Falling back to simulation.", aggregateError);
     }
   }
 

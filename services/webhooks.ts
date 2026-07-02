@@ -20,6 +20,7 @@ export async function notifyMirrorWebhooks(guildId: string, notifyText: string, 
       fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(3000),
         body: payload
       })
         .then(async (res) => {
@@ -51,11 +52,15 @@ export async function editOriginalInteraction(token: string, content: string, co
   }
 
   try {
-    await fetch(editUrl, {
+    const res = await fetch(editUrl, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(4000),
       body: JSON.stringify(editPayload)
     });
+    if (!res.ok) {
+      console.error("Discord edit original interaction failed:", res.status, await res.text());
+    }
   } catch (e) {
     console.error("Failed to edit original interaction message:", e);
   }
