@@ -16,26 +16,27 @@ export async function notifyMirrorWebhooks(guildId: string, notifyText: string, 
       text: notifyText     // Fallback for Slack webhooks
     });
 
-    urlsToNotify.forEach((url) => {
-      fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(3000),
-        body: payload
-      })
-        .then(async (res) => {
+    await Promise.allSettled(
+      urlsToNotify.map(async (url) => {
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(5000),
+            body: payload
+          });
           if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-        })
-        .catch((error) => {
+        } catch (error: any) {
           console.error(`Mirror webhook failed (${url}):`, error);
           if (interactionId) {
-            prisma.command_log.updateMany({
+            await prisma.command_log.updateMany({
               where: { interactionId, guildId },
               data: { errorLog: `Mirror failed (${url.slice(0, 25)}...): ${error.message || error}` }
             }).catch((e) => console.error("Failed to update DB error log:", e));
           }
-        });
-    });
+        }
+      })
+    );
   } catch (err) {
     console.error("Error checking mirror webhooks:", err);
   }
