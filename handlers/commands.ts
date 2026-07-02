@@ -141,30 +141,33 @@ export async function handleApplicationCommand(message: any) {
       // 1. Instantly update Discord UI so user never waits on DB inserts or webhook mirrors!
       await editOriginalInteraction(token, replyMessage, replyComponents);
 
-      // 2. Log to database in background
-      await prisma.command_log.create({
-        data: {
-          interactionId: interactionId,
-          guildId: guildId,
-          commandName: name,
-          user: username,
-          payloadText: reportText,
-          flagged: flagged,
-          aiTriage: aiTriage
-        }
-      });
+      // 2. Log to database & mirror webhooks in background (safely isolated from UI!)
+      try {
+        await prisma.command_log.create({
+          data: {
+            interactionId: interactionId,
+            guildId: guildId,
+            commandName: name,
+            user: username,
+            payloadText: reportText,
+            flagged: flagged,
+            aiTriage: aiTriage
+          }
+        });
 
-      // 3. Mirror notifications in background
-      const notifyText = `**New Command Used:** \`/${name}\` by ${username}\n**Flagged:** ${flagged}\n**AI Triage:** ${aiTriage || "N/A"}\n**Content:** ${reportText || "N/A"}`;
-      await notifyMirrorWebhooks(guildId, notifyText, interactionId);
+        const notifyText = `**New Command Used:** \`/${name}\` by ${username}\n**Flagged:** ${flagged}\n**AI Triage:** ${aiTriage || "N/A"}\n**Content:** ${reportText || "N/A"}`;
+        await notifyMirrorWebhooks(guildId, notifyText, interactionId);
+      } catch (dbError: any) {
+        if (dbError?.code === 'P2002') {
+          console.log(`Duplicate interaction ID ${interactionId} detected in background. No-op.`);
+        } else {
+          console.error("Background database logging / webhook mirroring error:", dbError);
+        }
+      }
 
     } catch (error: any) {
-      if (error?.code === 'P2002') {
-        console.log(`Duplicate interaction ID ${interactionId} detected in background. No-op.`);
-      } else {
-        console.error("Database error during command logging:", error);
-        await editOriginalInteraction(token, "❌ An error occurred while processing your command.");
-      }
+      console.error("Error processing command interaction:", error);
+      await editOriginalInteraction(token, "❌ An error occurred while processing your command.");
     }
   })();
 

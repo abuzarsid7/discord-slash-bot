@@ -61,33 +61,38 @@ export async function handleModalSubmit(message: any) {
       // 1. Instantly update Discord UI so user never waits on DB inserts or webhook mirrors!
       await editOriginalInteraction(token, replyContent, replyComponents);
 
-      const configRecord = await prisma.config.findUnique({
-        where: { guildId_key: { guildId, key: 'flagged_keywords' } }
-      });
-      const keywordsStr = configRecord?.value || "urgent";
-      const keywords = keywordsStr.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
-      const isFlagged = keywords.some((kw: string) => fullText.toLowerCase().includes(kw));
+      try {
+        const configRecord = await prisma.config.findUnique({
+          where: { guildId_key: { guildId, key: 'flagged_keywords' } }
+        });
+        const keywordsStr = configRecord?.value || "urgent";
+        const keywords = keywordsStr.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
+        const isFlagged = keywords.some((kw: string) => fullText.toLowerCase().includes(kw));
 
-      // 2. Log to database in background
-      await prisma.command_log.create({
-        data: {
-          interactionId: interactionId,
-          guildId: guildId,
-          commandName: `modal:${custom_id}`,
-          user: username,
-          payloadText: fullText,
-          flagged: isFlagged,
-          aiTriage: aiTriage
+        // 2. Log to database in background
+        await prisma.command_log.create({
+          data: {
+            interactionId: interactionId,
+            guildId: guildId,
+            commandName: `modal:${custom_id}`,
+            user: username,
+            payloadText: fullText,
+            flagged: isFlagged,
+            aiTriage: aiTriage
+          }
+        });
+
+        // 3. Mirror notifications in background
+        const notifyText = `**New Modal Submitted:** \`${custom_id}\` by ${username}\n**Flagged:** ${isFlagged}\n**AI Triage:** ${aiTriage}\n${fullText}`;
+        await notifyMirrorWebhooks(guildId, notifyText, interactionId);
+      } catch (dbError: any) {
+        if (dbError?.code !== 'P2002') {
+          console.error("Background database logging / webhook mirroring error:", dbError);
         }
-      });
-
-      // 3. Mirror notifications in background
-      const notifyText = `**New Modal Submitted:** \`${custom_id}\` by ${username}\n**Flagged:** ${isFlagged}\n**AI Triage:** ${aiTriage}\n${fullText}`;
-      await notifyMirrorWebhooks(guildId, notifyText, interactionId);
-    } catch (error: any) {
-      if (error?.code !== 'P2002') {
-        console.error("Database error logging modal submission:", error);
       }
+    } catch (error: any) {
+      console.error("Error processing modal submission:", error);
+      await editOriginalInteraction(token, "❌ An error occurred while processing your modal report.");
     }
   })();
 
