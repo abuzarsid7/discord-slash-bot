@@ -30,7 +30,7 @@ export default async function DashboardPage({
   const selectedGuildId = resolvedParams?.guildId || allGuilds[0] || "default";
 
   // Scoped Data Fetching inside Next.js Server Component by guild_id
-  const [logs, totalLogsCount, flaggedLogsCount, configRecord, mirrorRecord] = await Promise.all([
+  const [logs, totalLogsCount, flaggedLogsCount, configRecord, mirrorRecord, pauseRecord] = await Promise.all([
     prisma.command_log.findMany({
       where: { guildId: selectedGuildId },
       orderBy: { createdAt: "desc" },
@@ -40,10 +40,12 @@ export default async function DashboardPage({
     prisma.command_log.count({ where: { guildId: selectedGuildId, flagged: true } }),
     prisma.config.findUnique({ where: { guildId_key: { guildId: selectedGuildId, key: "flagged_keywords" } } }),
     prisma.config.findUnique({ where: { guildId_key: { guildId: selectedGuildId, key: "mirror_webhook_url" } } }),
+    prisma.config.findUnique({ where: { guildId_key: { guildId: selectedGuildId, key: "commands_paused" } } }),
   ]);
 
   const activeKeywords = configRecord?.value || "urgent";
   const activeMirrorUrl = mirrorRecord?.value || process.env.DISCORD_WEBHOOK_URL || process.env.SLACK_WEBHOOK_URL || "";
+  const isPaused = pauseRecord?.value === "true";
   const lastInteraction = logs[0] ? `/${logs[0].commandName} by ${logs[0].user}` : "None yet";
 
   return (
@@ -60,6 +62,22 @@ export default async function DashboardPage({
           <StatusBadge label="Multi-Server Isolated" status="info" />
         </div>
       </div>
+
+      {isPaused && (
+        <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 p-4 rounded-xl flex items-center justify-between gap-4 shadow-sm animate-pulse">
+          <div className="flex items-center gap-3">
+            <svg className="w-6 h-6 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div>
+              <p className="font-bold text-sm text-amber-200">Maintenance Mode Active</p>
+              <p className="text-xs text-amber-300/80 mt-0.5">
+                All slash commands are currently PAUSED for this server scope (<code className="font-mono bg-amber-500/20 px-1 py-0.5 rounded text-amber-100">{selectedGuildId}</code>). Interactive buttons and modals remain functional.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Multi-Server Isolation Selector Bar */}
       <div className="bg-[#2b2d31] p-4 rounded-xl border border-[#1e1f22] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md">
@@ -123,6 +141,7 @@ export default async function DashboardPage({
         guildId={selectedGuildId}
         initialKeywords={activeKeywords}
         initialMirrorUrl={activeMirrorUrl}
+        initialCommandsPaused={isPaused}
       />
 
       {/* Live Command Log Table */}

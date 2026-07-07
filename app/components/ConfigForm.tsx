@@ -7,13 +7,16 @@ export function ConfigForm({
   guildId = "default",
   initialKeywords,
   initialMirrorUrl,
+  initialCommandsPaused,
 }: {
   guildId?: string;
   initialKeywords: string;
   initialMirrorUrl?: string;
+  initialCommandsPaused?: boolean;
 }) {
   const [keywords, setKeywords] = useState(initialKeywords);
   const [mirrorUrl, setMirrorUrl] = useState(initialMirrorUrl || "");
+  const [commandsPaused, setCommandsPaused] = useState(initialCommandsPaused || false);
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
 
@@ -24,6 +27,7 @@ export function ConfigForm({
     formData.append("guildId", guildId);
     formData.append("keywords", keywords);
     formData.append("mirrorUrl", mirrorUrl);
+    formData.append("commandsPaused", commandsPaused ? "true" : "false");
 
     startTransition(async () => {
       await updateConfig(formData);
@@ -32,7 +36,10 @@ export function ConfigForm({
     });
   };
 
-  const isUnchanged = keywords === initialKeywords && mirrorUrl === (initialMirrorUrl || "");
+  const isUnchanged =
+    keywords === initialKeywords &&
+    mirrorUrl === (initialMirrorUrl || "") &&
+    commandsPaused === (initialCommandsPaused || false);
 
   return (
     <div className="bg-[#2b2d31] p-6 rounded-xl border border-[#1e1f22] shadow-md">
@@ -94,6 +101,35 @@ export function ConfigForm({
           <p className="text-xs text-gray-400 mt-1.5">
             Paste a Discord Channel Webhook URL to instantly mirror live command notifications to your secondary channel.
           </p>
+        </div>
+
+        {/* Pause Commands Toggle */}
+        <div className="p-4 rounded-lg bg-[#1e1f22] border border-[#111214] flex items-center justify-between gap-4">
+          <div>
+            <label htmlFor="commandsPaused" className="block text-xs font-semibold text-gray-200 uppercase tracking-wider cursor-pointer" onClick={() => setCommandsPaused(!commandsPaused)}>
+              Pause All Slash Commands (Maintenance Mode)
+            </label>
+            <p className="text-xs text-gray-400 mt-1">
+              When enabled, users attempting to run slash commands on this server will receive an instant pause notice. Interactive buttons & modals will continue working normally.
+            </p>
+          </div>
+          <div className="flex items-center shrink-0">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={commandsPaused}
+              onClick={() => setCommandsPaused(!commandsPaused)}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#5865F2] focus:ring-offset-2 focus:ring-offset-[#2b2d31] ${
+                commandsPaused ? 'bg-amber-500' : 'bg-[#313338]'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  commandsPaused ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center justify-between pt-2 border-t border-[#1e1f22]">

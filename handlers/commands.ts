@@ -10,6 +10,23 @@ export async function handleApplicationCommand(message: any) {
   const token = message.token;
   const username = message.member?.user?.username || message.user?.username || 'Unknown User';
   const guildId = message.guild_id || 'default';
+
+  try {
+    const pauseRecord = await prisma.config.findUnique({
+      where: { guildId_key: { guildId, key: 'commands_paused' } }
+    });
+    if (pauseRecord?.value === 'true') {
+      return NextResponse.json({
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: {
+          content: "⏸️ **Commands are currently paused on this server by an administrator.** Please try again later.",
+          flags: 64 // Ephemeral: only visible to the caller
+        }
+      });
+    }
+  } catch (err) {
+    console.error("Error checking command pause status:", err);
+  }
   
   let replyMessage = "Command received!";
   let replyComponents: any[] | undefined = undefined;

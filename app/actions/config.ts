@@ -24,6 +24,15 @@ export async function updateConfig(formData: FormData) {
     });
   }
 
+  const commandsPaused = formData.get("commandsPaused") as string;
+  if (commandsPaused !== null && commandsPaused !== undefined) {
+    await prisma.config.upsert({
+      where: { guildId_key: { guildId, key: "commands_paused" } },
+      update: { value: commandsPaused },
+      create: { guildId, key: "commands_paused", value: commandsPaused },
+    });
+  }
+
   revalidatePath("/dashboard");
 }
 
